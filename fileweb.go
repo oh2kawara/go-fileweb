@@ -38,7 +38,6 @@ func addRoot(path string) {
 }
 
 func main() {
-	var handler http.Handler
 	var err error
 
 	// コマンドライン解析
@@ -72,9 +71,6 @@ func main() {
 		}
 	}
 
-	handler, err = fwlibs.Create()
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), handler))
+	http.HandleFunc("/", fwlibs.Handler)
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), nil))
 }

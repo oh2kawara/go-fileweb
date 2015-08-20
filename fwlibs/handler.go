@@ -1,13 +1,23 @@
 package fwlibs
 
 import (
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
+	"time"
 )
+
+// ドキュメントルートスライス
+var docRoot []string
+
+var zeroTime time.Time
+
+func init() {
+	zeroTime = time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC)
+}
+
+// ========== ========== ========== ==========
 
 // error interface
 type fwhError struct{ message string }
@@ -18,38 +28,34 @@ func (e fwhError) Error() string { return e.message }
 
 // http.Handler interface
 type fwHandler struct {
-	// ドキュメントルートスライス
-	docRoot []string
 	// リクエスト
 	req *http.Request
 	// レスポンス
 	rsp http.ResponseWriter
+	// コンテンツファイル
+	fp *os.File
 }
 
-// http.Handler.ServeHTTP
-func (h fwHandler) ServeHTTP(rsp http.ResponseWriter, req *http.Request) {
-	// 初期化
-	h.req = req
-	h.rsp = rsp
+func (h fwHandler) ServeHTTP() {
 	// パス
-	uri := "/" + req.URL.Path
+	uri := "/" + h.req.URL.Path
 	//log.Println(uri)
 	var fi os.FileInfo
 	var err error
-	for _, dr := range h.docRoot {
+	for _, dr := range docRoot {
 		fname := filepath.Join(dr, uri)
 		fi, err = os.Stat(fname)
 		if !os.IsNotExist(err) {
 			if fi.IsDir() {
-				// 末尾が"/"で無ければ"/"をつけてリダイレクト
-				last := uri[len(uri)-1]
-				if last != '/' {
-					req.URL.Path += "/"
-					header := rsp.Header()
-					header.Set("location", req.URL.String())
-					rsp.WriteHeader(http.StatusMovedPermanently)
-					return
-				}
+				// // 末尾が"/"で無ければ"/"をつけてリダイレクト
+				// last := uri[len(uri)-1]
+				// if last != '/' {
+				// 	h.req.URL.Path += "/"
+				// 	redirect_url := h.req.URL.String()
+				// 	log.Println(redirect_url)
+				// 	http.Redirect(h.rsp, h.req, redirect_url, http.StatusMovedPermanently)
+				// 	return
+				// }
 				// ディレクトリ
 				for _, idxname := range [2]string{"index.html", "index.htm"} {
 					fnameidx := filepath.Join(fname, idxname)
@@ -65,68 +71,27 @@ func (h fwHandler) ServeHTTP(rsp http.ResponseWriter, req *http.Request) {
 			}
 		}
 	}
-	h.response404()
-}
-
-func (h fwHandler) response404() {
-	h.rsp.WriteHeader(http.StatusNotFound)
-	_, err := h.rsp.Write([]byte("File Not Found."))
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func (h fwHandler) response500(err error) {
-	h.rsp.WriteHeader(http.StatusInternalServerError)
-	mess := "Internal Server Error"
-	if err != nil {
-		mess += ":" + err.Error()
-	}
-	_, err = h.rsp.Write([]byte(mess))
-	if err != nil {
-		log.Fatal(err)
-	}
+	http.NotFound(h.rsp, h.req)
 }
 
 func (h fwHandler) responseFile(fname string) {
-	var err error
-	var fp *os.File
-	var fi os.FileInfo
-	// log.Println(fname)
-	// ファイルを出力
-	for {
-		fp, err = os.Open(fname)
-		if err != nil {
-			break
-		}
-		fi, err = fp.Stat()
-		if err != nil {
-			break
-		}
-		fileLen := fi.Size()
-		fileData := make([]byte, fileLen)
-		_, err = fp.Read(fileData)
-		if err != nil {
-			break
-		}
-		err = fp.Close()
-		header := h.rsp.Header()
-		header.Set("content-type", GetMimeTypeByFilename(fname))
-		header.Set("content-length", strconv.FormatInt(fileLen, 10))
-		h.rsp.WriteHeader(http.StatusOK)
-		h.rsp.Write(fileData)
+	fp, err := os.Open(fname)
+	if err != nil {
+		http.Error(h.rsp, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if fp != nil {
-		err = fp.Close()
-	}
-	h.response500(err)
+	h.fp = fp
+
+	defer func() {
+		h.fp.Close()
+		h.fp = nil
+	}()
+
+	h.rsp.Header().Set("content-type", GetMimeTypeByFilename(fname))
+	http.ServeContent(h.rsp, h.req, fname, zeroTime, h.fp)
 }
 
 // ========== ========== ========== ==========
-
-// ドキュメントルートスライス
-var docRoot []string
 
 // ユーザホームの取得
 func userHomeDir() string {
@@ -158,20 +123,21 @@ func AddDocumentRoot(path string) error {
 	return err
 }
 
-// http.Handlerの生成
-func Create() (http.Handler, error) {
-	var err error
-	var _dr []string
+// ドキュメントルートのセットアップ。
+// 空であればカレントディレクトリの追加
+func SetupDocumentRoot() error {
 	if len(docRoot) == 0 {
-		var cwd string
-		cwd, err = os.Getwd()
+		cwd, err := os.Getwd()
 		if err != nil {
-			return nil, err
+			return err
 		}
-		_dr = []string{cwd}
-	} else {
-		_dr = make([]string, len(docRoot))
-		copy(_dr, docRoot)
+		docRoot = append(docRoot, cwd)
 	}
-	return fwHandler{docRoot: _dr}, nil
+	return nil
+}
+
+// http.Handlerの生成
+func Handler(rsp http.ResponseWriter, req *http.Request) {
+	h := fwHandler{rsp: rsp, req: req}
+	h.ServeHTTP()
 }

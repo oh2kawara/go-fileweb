@@ -7,8 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-
-	"github.com/oh2kawara/go-fileweb/fwlibs"
 )
 
 const defaultPort int = 8050
@@ -31,7 +29,7 @@ func init() {
 }
 
 func addRoot(path string) {
-	err := fwlibs.AddDocumentRoot(path)
+	err := AddDocumentRoot(path)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -71,6 +69,6 @@ func main() {
 		}
 	}
 
-	http.HandleFunc("/", fwlibs.Handler)
+	http.HandleFunc("/", FsHandler)
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), nil))
 }

@@ -1,4 +1,4 @@
-package fwlibs
+package main
 
 import (
 	"mime"

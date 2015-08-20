@@ -1,4 +1,4 @@
-package fwlibs
+package main
 
 import (
 	"net/http"
@@ -137,7 +137,7 @@ func SetupDocumentRoot() error {
 }
 
 // http.Handlerの生成
-func Handler(rsp http.ResponseWriter, req *http.Request) {
+func FsHandler(rsp http.ResponseWriter, req *http.Request) {
 	h := fwHandler{rsp: rsp, req: req}
 	h.ServeHTTP()
 }
